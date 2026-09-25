@@ -20,7 +20,17 @@
       border-radius: 20px;
       font-size: 0.95rem;
       margin-top: 10px;
-      letter-spacing: 0.3px;
+    }
+    .scan-again-btn {
+      margin-top: 15px;
+      background-color: #0b57d0;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
     }
     .error { color: #d93025; font-weight: 500; }
   </style>
@@ -28,51 +38,71 @@
 <body>
   <h2>Barcode Price Lookup</h2>
   <div id="reader"></div>
-  <div id="result">Scan a product barcode using your camera</div>
+  <div id="result">Loading product database...</div>
 
   <script>
     const catalog = {};
+    let isCatalogLoaded = false;
+    let html5QrcodeScanner = null;
 
-    // Fetch and parse CSV
-    fetch('products.csv')
+    function normalizeBarcode(code) {
+      return code ? code.replace(/^0+/, '').trim() : '';
+    }
+
+    // Fetch CSV with cache-busting timestamp
+    fetch('products.csv?t=' + Date.now(), { cache: 'no-store' })
       .then(res => {
         if (!res.ok) throw new Error('Failed to load database file.');
         return res.text();
       })
       .then(csvText => {
-        const lines = csvText.split(/\r?\n/);
+        const cleanCsv = csvText.replace(/^\uFEFF/, '');
+        const lines = cleanCsv.split(/\r?\n/);
         
         lines.forEach((line, index) => {
           const trimmedLine = line.trim();
-          if (!trimmedLine) return; // Skip blank lines
+          if (!trimmedLine) return;
 
-          // Skip CSV header line
           if (index === 0 && trimmedLine.toLowerCase().startsWith('barcode')) return;
 
-          // Standard split with quote removal
           const columns = trimmedLine.split(',').map(col => col.replace(/^"|"$/g, '').trim());
           
           if (columns.length >= 3) {
             const [barcode, name, price, discount] = columns;
-            catalog[barcode] = { 
-              name, 
-              price, 
-              discount: discount || '' 
-            };
+            const cleanCode = barcode.trim();
+            const itemData = { name, price, discount: discount || '' };
+            
+            catalog[cleanCode] = itemData;
+            catalog[normalizeBarcode(cleanCode)] = itemData;
           }
         });
+
+        isCatalogLoaded = true;
+        document.getElementById('result').innerText = 'Scan a product barcode using your camera';
       })
       .catch(err => {
-        document.getElementById('result').innerHTML = `<p class="error">Error loading product database. Ensure products.csv is present and served via HTTP/HTTPS.</p>`;
+        document.getElementById('result').innerHTML = `<p class="error">Error loading catalog. Check network or file setup.</p>`;
       });
 
     function onScanSuccess(decodedText) {
-      const cleanBarcode = decodedText.trim();
-      const item = catalog[cleanBarcode];
       const resultDiv = document.getElementById('result');
+
+      if (!isCatalogLoaded) return;
+
+      // Clean string thoroughly for iOS WebKit compatibility
+      const cleanBarcode = decodedText.trim().replace(/[\r\n]+/g, '');
+      const normalizedCode = normalizeBarcode(cleanBarcode);
+
+      const item = catalog[cleanBarcode] || catalog[normalizedCode];
       
       if (item) {
-        // Build discount badge markup if a discount exists
+        // Pause scanner immediately on iOS to prevent callback spam & UI freezing
+        if (html5QrcodeScanner) {
+          try {
+            html5QrcodeScanner.pause(true);
+          } catch (e) {}
+        }
+
         const discountHTML = item.discount 
           ? `<div class="discount-badge">Promo: ${item.discount}</div>` 
           : '';
@@ -81,18 +111,32 @@
           <p class="name">${item.name}</p>
           <div class="price">£${item.price}</div>
           ${discountHTML}
+          <br>
+          <button class="scan-again-btn" onclick="resumeScanning()">Scan Next Item</button>
         `;
       } else {
         resultDiv.innerHTML = `<p>Item not found for barcode: <strong>${cleanBarcode}</strong></p>`;
       }
     }
 
-    const html5QrcodeScanner = new Html5QrcodeScanner(
-      "reader",
-      { fps: 10, qrbox: { width: 250, height: 150 } },
-      /* verbose= */ false
-    );
-    html5QrcodeScanner.render(onScanSuccess);
+    function resumeScanning() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = 'Scan a product barcode using your camera';
+      if (html5QrcodeScanner) {
+        try {
+          html5QrcodeScanner.resume();
+        } catch (e) {}
+      }
+    }
+
+    window.addEventListener('load', () => {
+      html5QrcodeScanner = new Html5QrcodeScanner(
+        "reader",
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        /* verbose= */ false
+      );
+      html5QrcodeScanner.render(onScanSuccess);
+    });
   </script>
 </body>
 </html>
