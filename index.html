@@ -21,6 +21,12 @@
       font-size: 0.95rem;
       margin-top: 10px;
     }
+    .location {
+      color: #681da8; /* Purple font */
+      font-weight: 600;
+      font-size: 1.1rem;
+      margin-top: 12px;
+    }
     .scan-again-btn {
       margin-top: 15px;
       background-color: #0b57d0;
@@ -68,9 +74,15 @@
           const columns = trimmedLine.split(',').map(col => col.replace(/^"|"$/g, '').trim());
           
           if (columns.length >= 3) {
-            const [barcode, name, price, discount] = columns;
+            // Extract the 5th column (index 4) for location
+            const [barcode, name, price, discount, location] = columns;
             const cleanCode = barcode.trim();
-            const itemData = { name, price, discount: discount || '' };
+            const itemData = { 
+              name, 
+              price, 
+              discount: discount || '',
+              location: location || '' 
+            };
             
             catalog[cleanCode] = itemData;
             catalog[normalizeBarcode(cleanCode)] = itemData;
@@ -106,11 +118,16 @@
         const discountHTML = item.discount 
           ? `<div class="discount-badge">Promo: ${item.discount}</div>` 
           : '';
+          
+        const locationHTML = item.location
+          ? `<div class="location">Loc ${item.location}</div>`
+          : '';
 
         resultDiv.innerHTML = `
           <p class="name">${item.name}</p>
           <div class="price">£${item.price}</div>
           ${discountHTML}
+          ${locationHTML}
           <br>
           <button class="scan-again-btn" onclick="resumeScanning()">Scan Next Item</button>
         `;
